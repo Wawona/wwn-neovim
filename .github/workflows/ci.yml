@@ -1,0 +1,27 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  patch-anchors:
+    name: verify neovim patch anchors
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: python3 .github/scripts/verify-neovim-ios-patches.py
+
+  eval:
+    name: flake eval (instantiation)
+    runs-on: macos-15
+    needs: patch-anchors
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@main
+      - run: nix eval .#registryFragment --apply builtins.attrNames
+      - run: nix eval --raw .#packages.aarch64-darwin.neovim-ios.drvPath
