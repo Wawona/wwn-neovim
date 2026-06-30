@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Verify Neovim Apple-mobile compliance patches still apply to upstream anchors."""
 from pathlib import Path
+import os
 import re
 import subprocess
 import sys
@@ -9,8 +10,12 @@ import urllib.request
 
 ROOT = Path(__file__).resolve().parents[2]
 PATCH_DIR = ROOT / "dependencies" / "libs" / "neovim" / "patches"
-DISPATCH_C = ROOT.parent / "wwn-toolchain/dependencies/libs/wawona-pty/src/wawona-dispatch.c"
-ROOTFS_NIX = ROOT.parent / "wwn-zsh/dependencies/wawona/ios-rootfs.nix"
+TOOLCHAIN_ROOT = Path(
+    os.environ.get("WWN_TOOLCHAIN_ROOT", ROOT.parent / "wwn-toolchain")
+)
+ZSH_ROOT = Path(os.environ.get("WWN_ZSH_ROOT", ROOT.parent / "wwn-zsh"))
+DISPATCH_C = TOOLCHAIN_ROOT / "dependencies/libs/wawona-pty/src/wawona-dispatch.c"
+ROOTFS_NIX = ZSH_ROOT / "dependencies/wawona/ios-rootfs.nix"
 URL = "https://github.com/neovim/neovim/archive/refs/tags/v0.10.4.tar.gz"
 VERSION = "0.10.4"
 
@@ -41,10 +46,10 @@ def apply_patches(src: Path) -> None:
         raise SystemExit("cmake snippet not applied")
 
 
-def _inproc_tools(rootfs: str) -> set[str]:
-    m = re.search(r"WAWONA_INPROC_TOOLS=\((.*?)\)", rootfs, re.DOTALL)
+def _inproc_clients(rootfs: str) -> set[str]:
+    m = re.search(r"WAWONA_INPROC_CLIENTS=\((.*?)\)", rootfs, re.DOTALL)
     if not m:
-        raise SystemExit("ios-rootfs.nix: cannot find WAWONA_INPROC_TOOLS list")
+        raise SystemExit("ios-rootfs.nix: cannot find WAWONA_INPROC_CLIENTS list")
     return set(re.findall(r"\b([a-z][a-z0-9-]+)\b", m.group(1)))
 
 
@@ -55,12 +60,12 @@ def _dispatch_nvim_names(dispatch: str) -> set[str]:
 
 def check_inproc_tool_sync() -> None:
     if not DISPATCH_C.is_file():
-        print(f"SKIP dispatch sync ({DISPATCH_C} missing)", file=sys.stderr)
-        return
+        print(f"FAIL dispatch sync ({DISPATCH_C} missing)", file=sys.stderr)
+        sys.exit(1)
     if not ROOTFS_NIX.is_file():
-        print(f"SKIP dispatch sync ({ROOTFS_NIX} missing)", file=sys.stderr)
-        return
-    rootfs_set = _inproc_tools(ROOTFS_NIX.read_text())
+        print(f"FAIL dispatch sync ({ROOTFS_NIX} missing)", file=sys.stderr)
+        sys.exit(1)
+    rootfs_set = _inproc_clients(ROOTFS_NIX.read_text())
     dispatch_set = _dispatch_nvim_names(DISPATCH_C.read_text())
     expected = {"nvim", "vi", "vim"}
     if dispatch_set != expected:
@@ -69,10 +74,10 @@ def check_inproc_tool_sync() -> None:
         sys.exit(1)
     missing = expected - rootfs_set
     if missing:
-        print(f"FAIL WAWONA_INPROC_TOOLS missing nvim aliases: {sorted(missing)}",
+        print(f"FAIL WAWONA_INPROC_CLIENTS missing nvim aliases: {sorted(missing)}",
               file=sys.stderr)
         sys.exit(1)
-    print("OK nvim/vi/vim in WAWONA_INPROC_TOOLS ↔ wawona-dispatch.c")
+    print("OK nvim/vi/vim in WAWONA_INPROC_CLIENTS ↔ wawona-dispatch.c")
 
 
 def main() -> int:

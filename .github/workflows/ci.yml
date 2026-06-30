@@ -11,10 +11,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Wawona/wwn-toolchain
+          path: wwn-toolchain
+      - uses: actions/checkout@v4
+        with:
+          repository: Wawona/wwn-zsh
+          path: wwn-zsh
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - run: python3 .github/scripts/verify-neovim-ios-patches.py
+      - name: Verify patch anchors + dispatch sync
+        env:
+          WWN_TOOLCHAIN_ROOT: ${{ github.workspace }}/wwn-toolchain
+          WWN_ZSH_ROOT: ${{ github.workspace }}/wwn-zsh
+        run: python3 .github/scripts/verify-neovim-ios-patches.py
 
   eval:
     name: flake eval (instantiation)
@@ -24,4 +36,33 @@ jobs:
       - uses: actions/checkout@v4
       - uses: DeterminateSystems/nix-installer-action@main
       - run: nix eval .#registryFragment --apply builtins.attrNames
-      - run: nix eval --raw .#packages.aarch64-darwin.neovim-ios.drvPath
+      - run: |
+          nix eval --raw .#packages.aarch64-darwin.neovim-ios.drvPath
+          nix eval --raw .#packages.aarch64-darwin.neovim-rootfs-ios.drvPath
+          nix eval --raw .#packages.aarch64-darwin.neovim-android.drvPath
+
+  build-ios:
+    name: build neovim (Apple mobile)
+    runs-on: macos-15
+    needs: eval
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@main
+        with:
+          extra-conf: |
+            sandbox = relaxed
+            allow-import-from-derivation = true
+      - run: nix build .#packages.aarch64-darwin.neovim-ios .#packages.aarch64-darwin.neovim-rootfs-ios -L
+
+  build-android:
+    name: build neovim (Android)
+    runs-on: macos-15
+    needs: eval
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@main
+        with:
+          extra-conf: |
+            sandbox = relaxed
+            allow-import-from-derivation = true
+      - run: nix build .#packages.aarch64-darwin.neovim-android -L
