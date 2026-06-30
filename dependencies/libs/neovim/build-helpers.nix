@@ -21,6 +21,9 @@ let
   applyAppleMobilePatches = ''
     cp ${patchDir}/patch-neovim-apple-mobile.py ./patch-neovim-apple-mobile.py
     cp ${patchDir}/patch-libuv-spawn.py ./patch-libuv-spawn.py
+    cp ${patchDir}/patch-lua-loslib-apple-mobile.py ./patch-lua-loslib-apple-mobile.py
+    cp ${patchDir}/patch-and-build-lua-apple-mobile.sh ./patch-and-build-lua-apple-mobile.sh
+    chmod +x ./patch-and-build-lua-apple-mobile.sh
     cp ${patchDir}/cmake-apple-mobile-flags.snippet ./cmake-apple-mobile-flags.snippet
     cp ${patchDir}/cmake-deps-apple-mobile.snippet ./cmake-deps-apple-mobile.snippet
     python3 patch-neovim-apple-mobile.py
@@ -95,24 +98,59 @@ EOF
     ln -sf ${pkgs.lua5_1}/bin/lua .deps/usr/bin/lua
     ln -sf ${pkgs.lua5_1}/bin/luac .deps/usr/bin/luac
     make deps -j''${NIX_BUILD_CORES:-4}
+    LUA_MAKEFILE=$(find .deps/build -path '*/lua/src/Makefile' -print -quit)
+    if [ -n "$LUA_MAKEFILE" ]; then
+      LUA_DIR=$(dirname "$LUA_MAKEFILE")
+      echo "Rebuilding bundled PUC Lua for Apple mobile ($XCODE_CLANG)"
+      CC="$XCODE_CLANG" AR="$DEVELOPER_DIR/Toolchains/XcodeDefault.xctoolchain/usr/bin/ar" \
+        RANLIB="$DEVELOPER_DIR/Toolchains/XcodeDefault.xctoolchain/usr/bin/ranlib" \
+        bash "$PWD/patch-and-build-lua-apple-mobile.sh" "$LUA_DIR" "$PWD/.deps/usr" make \
+          "-arch ''${IOS_ARCH:-arm64} -target ''${APPLE_LINKER_TARGET} -isysroot ''${SDKROOT} ''${APPLE_DEPLOYMENT_FLAG} -O2 -g3 -fPIC"
+      mkdir -p .deps/usr/lib
+      cp "$LUA_DIR/liblua.a" .deps/usr/lib/liblua.a
+    fi
     if ! make -j''${NIX_BUILD_CORES:-4}; then
       if [ ! -f build/src/nvim/CMakeFiles/nvim_bin.dir/main.c.o ]; then
         echo "iOS cross-compile failed before nvim objects were built" >&2
         exit 1
       fi
-      echo "wwn-neovim: nvim link failed as expected (libuv Unix libs); collecting static archive"
+      echo "wwn-neovim: nvim link failed as expected (libuv Unix libs); finishing nvim objects"
     fi
+    ${pkgs.ninja}/bin/ninja -C build -k 0 2>/dev/null || true
   '';
 
   collectArchive = ''
+    keepAppleMobileObject() {
+      local obj="$1"
+      local plat
+      plat=$(${pkgs.darwin.cctools}/bin/otool -l "$obj" 2>/dev/null | awk '/^ platform / {print $2; exit}')
+      case "$plat" in
+        2|7) return 0 ;; # iOS device / simulator
+        *) return 1 ;;
+      esac
+    }
+
     WORKDIR=$(mktemp -d)
     SRC_ROOT="$PWD"
-    find build -path '*/nvim_bin.dir/*.o' -exec cp {} "$WORKDIR"/ \;
     for lib in "$SRC_ROOT"/.deps/usr/lib/*.a; do
       [ -f "$lib" ] || continue
-      (cd "$WORKDIR" && ar x "$lib")
+      libname=$(basename "$lib" .a)
+      TMP_LIB=$(mktemp -d)
+      (cd "$TMP_LIB" && ar x "$lib")
+      for obj in "$TMP_LIB"/*.o; do
+        [ -f "$obj" ] || continue
+        if keepAppleMobileObject "$obj"; then
+          cp -n "$obj" "$WORKDIR/deps_''${libname}_$(basename "$obj")"
+        fi
+      done
+      rm -rf "$TMP_LIB"
     done
-    MAIN_OBJ="$WORKDIR/main.c.o"
+    while IFS= read -r obj; do
+      rel="''${obj#*nvim_bin.dir/}"
+      safe="nvim_''${rel//\//_}"
+      cp -f "$obj" "$WORKDIR/$safe"
+    done < <(find build -path '*/nvim_bin.dir/*.o' -print)
+    MAIN_OBJ="$WORKDIR/nvim_main.c.o"
     if [ ! -f "$MAIN_OBJ" ]; then
       echo "main.c.o missing in archive workdir" >&2
       exit 1
@@ -121,6 +159,11 @@ EOF
       --redefine-sym _main=_wawona_nvim_main "$MAIN_OBJ" "$WORKDIR/wawona_nvim_main.o"
     rm -f "$MAIN_OBJ"
     ${pkgs.llvmPackages.llvm}/bin/llvm-ar rcs libwawona-neovim.a "$WORKDIR"/*.o
+    if ${pkgs.llvmPackages.llvm}/bin/llvm-nm libwawona-neovim.a 2>/dev/null | grep '_ExpandBufnames' | grep -q ' U ' \
+      && ! ${pkgs.llvmPackages.llvm}/bin/llvm-nm libwawona-neovim.a 2>/dev/null | grep '_ExpandBufnames' | grep -qE ' [TW] '; then
+      echo "buffer.c.o / _ExpandBufnames missing from libwawona-neovim.a" >&2
+      exit 1
+    fi
     rm -rf "$WORKDIR"
   '';
 in

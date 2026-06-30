@@ -28,17 +28,95 @@ lua_patch = "elseif(WAWONA_APPLE_MOBILE)\n  set(LUA_TARGET posix)\nelseif(APPLE)
 if lua_anchor in lua_text and "WAWONA_APPLE_MOBILE" not in lua_text:
     build_lua.write_text(lua_text.replace(lua_anchor, lua_patch, 1))
     lua_text = build_lua.read_text()
-if "WAWONA_APPLE_MOBILE_LUA" not in lua_text:
+lua_cflags_anchor = 'set(LUA_CFLAGS "-O2 -g3 -fPIC")\nset(LUA_LDFLAGS "")'
+lua_cflags_patch = """set(LUA_CFLAGS "-O2 -g3 -fPIC")
+if(WAWONA_APPLE_MOBILE)
+  if(CMAKE_C_COMPILER_TARGET)
+    string(APPEND LUA_CFLAGS " -target ${CMAKE_C_COMPILER_TARGET}")
+  endif()
+  if(CMAKE_OSX_SYSROOT)
+    string(APPEND LUA_CFLAGS " -isysroot ${CMAKE_OSX_SYSROOT}")
+  endif()
+  if(CMAKE_OSX_ARCHITECTURES)
+    string(APPEND LUA_CFLAGS " -arch ${CMAKE_OSX_ARCHITECTURES}")
+  endif()
+  if(CMAKE_OSX_DEPLOYMENT_TARGET AND CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    if(CMAKE_C_COMPILER_TARGET MATCHES "simulator")
+      string(APPEND LUA_CFLAGS " -mios-simulator-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
+    else()
+      string(APPEND LUA_CFLAGS " -miphoneos-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
+    endif()
+  endif()
+  string(APPEND LUA_CFLAGS " ${CMAKE_C_FLAGS}")
+endif()
+set(LUA_LDFLAGS "")"""
+if lua_cflags_anchor in lua_text and "WAWONA_APPLE_MOBILE_LUA_CFLAGS" not in lua_text:
+    build_lua.write_text(lua_text.replace(lua_cflags_anchor, lua_cflags_patch, 1))
+    lua_text = build_lua.read_text()
+
+lua_cross_build = """if(WAWONA_APPLE_MOBILE AND CMAKE_C_COMPILER_TARGET)
+  set(WAWONA_LUA_BUILD_COMMAND ${CMAKE_COMMAND} -E env CC=${CMAKE_C_COMPILER} AR=${CMAKE_AR} RANLIB=${CMAKE_RANLIB} bash ${CMAKE_CURRENT_LIST_DIR}/../../patch-and-build-lua-apple-mobile.sh ${DEPS_BUILD_DIR}/src/lua/src ${DEPS_INSTALL_DIR} ${MAKE_PRG} "${LUA_CFLAGS}")
+  set(WAWONA_LUA_INSTALL_COMMAND ${CMAKE_COMMAND} -E make_directory ${DEPS_LIB_DIR} ${DEPS_INSTALL_DIR}/include && ${CMAKE_COMMAND} -E copy ${DEPS_BUILD_DIR}/src/lua/src/liblua.a ${DEPS_LIB_DIR}/liblua.a && ${CMAKE_COMMAND} -DFROM_GLOB=${DEPS_BUILD_DIR}/src/lua/src/*.h -DTO=${DEPS_INSTALL_DIR}/include -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CopyFilesGlob.cmake)
+else()
+  set(WAWONA_LUA_BUILD_COMMAND ${MAKE_PRG} ${LUA_INSTALL_TOP_ARG} ${LUA_TARGET})
+  set(WAWONA_LUA_INSTALL_COMMAND ${MAKE_PRG} ${LUA_INSTALL_TOP_ARG} install)
+endif()
+"""
+if "WAWONA_LUA_BUILD_COMMAND" in lua_text and 'patch-and-build-lua-apple-mobile.sh ${DEPS_BUILD_DIR}/src/lua/src ${DEPS_INSTALL_DIR} ${MAKE_PRG} "${LUA_CFLAGS}"' not in lua_text:
     build_lua.write_text(lua_text.replace(
-        "  BUILD_COMMAND ${MAKE_PRG} ${LUA_INSTALL_TOP_ARG} ${LUA_TARGET}\n"
-        "  INSTALL_COMMAND ${MAKE_PRG} ${LUA_INSTALL_TOP_ARG} install",
-        "  BUILD_COMMAND ${MAKE_PRG} ${LUA_INSTALL_TOP_ARG} -C src liblua.a\n"
-        "  INSTALL_COMMAND ${CMAKE_COMMAND} -E make_directory ${DEPS_LIB_DIR} ${DEPS_INSTALL_DIR}/include && "
-        "${CMAKE_COMMAND} -E copy ${DEPS_BUILD_DIR}/src/lua/src/liblua.a ${DEPS_LIB_DIR}/liblua.a && "
-        "${CMAKE_COMMAND} -DFROM_GLOB=${DEPS_BUILD_DIR}/src/lua/src/*.h -DTO=${DEPS_INSTALL_DIR}/include "
-        "-P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CopyFilesGlob.cmake # WAWONA_APPLE_MOBILE_LUA",
+        "bash ${CMAKE_CURRENT_LIST_DIR}/../../patch-and-build-lua-apple-mobile.sh ${DEPS_BUILD_DIR}/src/lua/src ${DEPS_INSTALL_DIR} ${MAKE_PRG})",
+        "bash ${CMAKE_CURRENT_LIST_DIR}/../../patch-and-build-lua-apple-mobile.sh ${DEPS_BUILD_DIR}/src/lua/src ${DEPS_INSTALL_DIR} ${MAKE_PRG} \"${LUA_CFLAGS}\")",
+        1,
+    ).replace(
+        "MYCFLAGS=\"${LUA_CFLAGS}\" bash",
+        "bash",
         1,
     ))
+    lua_text = build_lua.read_text()
+
+lua_ep_anchor = "get_externalproject_options(lua ${DEPS_IGNORE_SHA})"
+if "WAWONA_LUA_BUILD_COMMAND" not in lua_text and lua_ep_anchor in lua_text:
+    build_lua.write_text(lua_text.replace(lua_ep_anchor, lua_cross_build + lua_ep_anchor, 1))
+    lua_text = build_lua.read_text()
+
+for old_build in (
+    "  BUILD_COMMAND ${CMAKE_COMMAND} -E env CC=${CMAKE_C_COMPILER} AR=${CMAKE_AR} RANLIB=${CMAKE_RANLIB} MYCFLAGS=\"${LUA_CFLAGS}\" bash ${CMAKE_CURRENT_LIST_DIR}/../../patch-and-build-lua-apple-mobile.sh ${DEPS_BUILD_DIR}/src/lua/src ${DEPS_INSTALL_DIR} ${MAKE_PRG}\n",
+    "  BUILD_COMMAND ${MAKE_PRG} ${LUA_INSTALL_TOP_ARG} -C src liblua.a\n",
+    "  BUILD_COMMAND ${MAKE_PRG} ${LUA_INSTALL_TOP_ARG} ${LUA_TARGET}\n",
+):
+    if old_build in lua_text:
+        build_lua.write_text(lua_text.replace(old_build, "  BUILD_COMMAND ${WAWONA_LUA_BUILD_COMMAND}\n", 1))
+        lua_text = build_lua.read_text()
+        break
+
+for old_install in (
+    "  INSTALL_COMMAND ${CMAKE_COMMAND} -E make_directory ${DEPS_LIB_DIR} ${DEPS_INSTALL_DIR}/include && "
+    "${CMAKE_COMMAND} -E copy ${DEPS_BUILD_DIR}/src/lua/src/liblua.a ${DEPS_LIB_DIR}/liblua.a && "
+    "${CMAKE_COMMAND} -DFROM_GLOB=${DEPS_BUILD_DIR}/src/lua/src/*.h -DTO=${DEPS_INSTALL_DIR}/include "
+    "-P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CopyFilesGlob.cmake # WAWONA_APPLE_MOBILE_LUA\n",
+    "  INSTALL_COMMAND ${MAKE_PRG} ${LUA_INSTALL_TOP_ARG} install\n",
+):
+    if old_install in lua_text:
+        build_lua.write_text(lua_text.replace(old_install, "  INSTALL_COMMAND ${WAWONA_LUA_INSTALL_COMMAND}\n", 1))
+        lua_text = build_lua.read_text()
+        break
+
+for broken in (
+    """if(WAWONA_APPLE_MOBILE AND CMAKE_C_COMPILER_TARGET)
+  string(APPEND LUA_CONFIGURE_COMMAND " && python3 ${CMAKE_CURRENT_LIST_DIR}/../../patch-lua-loslib-apple-mobile.py ${DEPS_BUILD_DIR}/src/lua/src/loslib.c")
+endif()
+""",
+    """set(LUA_APPLE_MOBILE_LOSLIB_PATCH "")
+if(WAWONA_APPLE_MOBILE AND CMAKE_C_COMPILER_TARGET)
+  set(LUA_APPLE_MOBILE_LOSLIB_PATCH "&& python3 ${CMAKE_CURRENT_LIST_DIR}/../../patch-lua-loslib-apple-mobile.py ${DEPS_BUILD_DIR}/src/lua/src/loslib.c")
+endif()
+""",
+):
+    if broken in lua_text:
+        build_lua.write_text(lua_text.replace(broken, "", 1))
+        lua_text = build_lua.read_text()
+if "${LUA_APPLE_MOBILE_LOSLIB_PATCH}" in lua_text:
+    build_lua.write_text(lua_text.replace(" ${LUA_APPLE_MOBILE_LOSLIB_PATCH}", "", 1))
 
 install_helpers = Path("cmake/InstallHelpers.cmake")
 ih_text = install_helpers.read_text()
