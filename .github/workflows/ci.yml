@@ -14,16 +14,16 @@ jobs:
     name: verify neovim patch anchors
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+      - uses: actions/checkout@v5
         with:
           repository: Wawona/wwn-toolchain
           path: wwn-toolchain
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           repository: Wawona/wwn-zsh
           path: wwn-zsh
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
       - name: Verify patch anchors + dispatch sync
@@ -37,7 +37,7 @@ jobs:
     runs-on: macos-15
     needs: patch-anchors
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: DeterminateSystems/nix-installer-action@main
         with:
           determinate: true
@@ -54,7 +54,7 @@ jobs:
     runs-on: macos-15
     needs: eval
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: DeterminateSystems/nix-installer-action@main
         with:
           determinate: true
@@ -70,7 +70,7 @@ jobs:
     runs-on: macos-15
     needs: eval
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: DeterminateSystems/nix-installer-action@main
         with:
           determinate: true
