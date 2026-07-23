@@ -26,7 +26,10 @@ let
     chmod +x ./patch-and-build-lua-apple-mobile.sh
     cp ${patchDir}/cmake-apple-mobile-flags.snippet ./cmake-apple-mobile-flags.snippet
     cp ${patchDir}/cmake-deps-apple-mobile.snippet ./cmake-deps-apple-mobile.snippet
+    cp ${patchDir}/patch-neovim-link-collisions.py ./patch-neovim-link-collisions.py
+    cp ${patchDir}/wwn-neovim-eval-stubs.c ./wwn-neovim-eval-stubs.c
     python3 patch-neovim-apple-mobile.py
+    python3 patch-neovim-link-collisions.py
   '';
 
   baseNative = with buildPackages; [
@@ -158,6 +161,9 @@ EOF
     ${pkgs.llvmPackages.llvm}/bin/llvm-objcopy \
       --redefine-sym _main=_wawona_nvim_main "$MAIN_OBJ" "$WORKDIR/wawona_nvim_main.o"
     rm -f "$MAIN_OBJ"
+    "$XCODE_CLANG" -c "$SRC_ROOT/wwn-neovim-eval-stubs.c" \
+      -arch "''${IOS_ARCH:-arm64}" -isysroot "$SDKROOT" ''${APPLE_DEPLOYMENT_FLAG} -fPIC \
+      -o "$WORKDIR/wwn-neovim-eval-stubs.o"
     ${pkgs.llvmPackages.llvm}/bin/llvm-ar rcs libwawona-neovim.a "$WORKDIR"/*.o
     if ${pkgs.llvmPackages.llvm}/bin/llvm-nm libwawona-neovim.a 2>/dev/null | grep '_ExpandBufnames' | grep -q ' U ' \
       && ! ${pkgs.llvmPackages.llvm}/bin/llvm-nm libwawona-neovim.a 2>/dev/null | grep '_ExpandBufnames' | grep -qE ' [TW] '; then
