@@ -72,8 +72,8 @@ let
     mkdir -p .deps/usr/bin
     ln -sf ${pkgs.lua5_1}/bin/lua .deps/usr/bin/lua
     ln -sf ${pkgs.lua5_1}/bin/luac .deps/usr/bin/luac
-    make deps -j''${NIX_BUILD_CORES:-4}
-    make build/.ran-cmake
+    make deps DEPS_CMAKE_FLAGS="$DEPS_CMAKE_FLAGS" -j''${NIX_BUILD_CORES:-4}
+    make build/.ran-cmake CMAKE_EXTRA_FLAGS="$CMAKE_EXTRA_FLAGS"
     ${pkgs.cmake}/bin/cmake --build build --target nlua0 -j''${NIX_BUILD_CORES:-4}
     mkdir -p host-artifacts
     HOST_NLUA=$(find build -path '*/lib/libnlua0.so' -print -quit)
@@ -100,7 +100,7 @@ EOF
     mkdir -p .deps/usr/bin
     ln -sf ${pkgs.lua5_1}/bin/lua .deps/usr/bin/lua
     ln -sf ${pkgs.lua5_1}/bin/luac .deps/usr/bin/luac
-    make deps -j''${NIX_BUILD_CORES:-4}
+    make deps DEPS_CMAKE_FLAGS="$DEPS_CMAKE_FLAGS" -j''${NIX_BUILD_CORES:-4}
     LUA_MAKEFILE=$(find .deps/build -path '*/lua/src/Makefile' -print -quit)
     if [ -n "$LUA_MAKEFILE" ]; then
       LUA_DIR=$(dirname "$LUA_MAKEFILE")
@@ -112,7 +112,7 @@ EOF
       mkdir -p .deps/usr/lib
       cp "$LUA_DIR/liblua.a" .deps/usr/lib/liblua.a
     fi
-    if ! make -j''${NIX_BUILD_CORES:-4}; then
+    if ! make CMAKE_EXTRA_FLAGS="$CMAKE_EXTRA_FLAGS" -j''${NIX_BUILD_CORES:-4}; then
       if [ ! -f build/src/nvim/CMakeFiles/nvim_bin.dir/main.c.o ]; then
         echo "iOS cross-compile failed before nvim objects were built" >&2
         exit 1

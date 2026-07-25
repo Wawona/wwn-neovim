@@ -115,8 +115,11 @@
         } // (if isDarwin then {
           neovim-ios = tc.buildForIOS "neovim" { };
           neovim-ios-sim = tc.buildForIOS "neovim" { simulator = true; };
+          neovim-visionos = tc.buildForVisionOS "neovim" { };
+          neovim-visionos-sim = tc.buildForVisionOS "neovim" { simulator = true; };
           neovim-macos = tc.buildForMacOS "neovim" { };
           neovim-rootfs-ios = tc.buildForIOS "neovim-rootfs" { };
+          neovim-rootfs-visionos = tc.buildForVisionOS "neovim-rootfs" { };
         } else { }));
 
       formatter = forAll (system: (pkgsFor system).nixfmt-rfc-style);

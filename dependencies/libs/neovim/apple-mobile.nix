@@ -56,6 +56,13 @@ pkgs.stdenv.mkDerivation {
       minVersion = mobile.minVersion;
     }}
 
+    ${lib.optionalString mobile.isVisionOS ''
+      # Neovim's bundled ExternalProject dependencies do not consistently
+      # inherit CMAKE_TOOLCHAIN_FILE. CMake otherwise seeds their Darwin target
+      # from the macOS host version (for example xros14.0, which is invalid).
+      export MACOSX_DEPLOYMENT_TARGET="${mobile.minVersion}"
+    ''}
+
     ${appleCmake { inherit iosToolchain simulator; }}
 
     ${helpers.iosCrossBuildPass}
