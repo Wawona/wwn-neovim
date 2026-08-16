@@ -1,5 +1,7 @@
 # wwn-neovim
 
+[![CI](https://github.com/Wawona/wwn-neovim/actions/workflows/ci.yml/badge.svg)](https://github.com/Wawona/wwn-neovim/actions/workflows/ci.yml)
+
 Wawona's [Neovim](https://neovim.io) port, cross-compiled with
 [wwn-toolchain](https://github.com/Wawona/wwn-toolchain) for **macOS, Apple mobile,
 and Android**. Upstream **0.10.4** is fetched at build time (patch-overlay model,
