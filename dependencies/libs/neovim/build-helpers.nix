@@ -15,6 +15,11 @@
 
 let
   inherit (pkgs) stdenv;
+  applePlatform =
+    if iosToolchain.isVisionOSToolchain or false then (if simulator then 12 else 11)
+    else if iosToolchain.isWatchOSToolchain or false then (if simulator then 9 else 4)
+    else if iosToolchain.isTVOSToolchain or false then (if simulator then 8 else 3)
+    else if simulator then 7 else 2;
 
   patchDir = ./patches;
 
@@ -126,11 +131,15 @@ EOF
     keepAppleMobileObject() {
       local obj="$1"
       local plat
-      plat=$(${pkgs.darwin.cctools}/bin/otool -l "$obj" 2>/dev/null | awk '/^ platform / {print $2; exit}')
-      case "$plat" in
-        2|7) return 0 ;; # iOS device / simulator
-        *) return 1 ;;
-      esac
+      plat=$(${pkgs.darwin.cctools}/bin/otool -l "$obj" 2>/dev/null | awk '
+        /cmd LC_BUILD_VERSION/ { build = 1; next }
+        build && $1 == "platform" { result = $2; build = 0 }
+        /cmd LC_VERSION_MIN_IPHONEOS/ { result = 2 }
+        /cmd LC_VERSION_MIN_TVOS/ { result = 3 }
+        /cmd LC_VERSION_MIN_WATCHOS/ { result = 4 }
+        END { if (result != "") print result }
+      ')
+      [ "$plat" = "${toString applePlatform}" ]
     }
 
     WORKDIR=$(mktemp -d)
@@ -165,6 +174,15 @@ EOF
       -arch "''${IOS_ARCH:-arm64}" -isysroot "$SDKROOT" ''${APPLE_DEPLOYMENT_FLAG} -fPIC \
       -o "$WORKDIR/wwn-neovim-eval-stubs.o"
     ${pkgs.llvmPackages.llvm}/bin/llvm-ar rcs libwawona-neovim.a "$WORKDIR"/*.o
+    ${pkgs.llvmPackages.llvm}/bin/llvm-nm --defined-only -g --format=posix \
+      libwawona-neovim.a > "$WORKDIR/defined-symbols.txt"
+    for symbol in _lua_newstate _luaL_newstate; do
+      awk -v symbol="$symbol" '$1 == symbol { found = 1 } END { exit !found }' \
+        "$WORKDIR/defined-symbols.txt" || {
+          echo "required native PUC Lua definition missing: $symbol" >&2
+          exit 1
+        }
+    done
     if ${pkgs.llvmPackages.llvm}/bin/llvm-nm libwawona-neovim.a 2>/dev/null | grep '_ExpandBufnames' | grep -q ' U ' \
       && ! ${pkgs.llvmPackages.llvm}/bin/llvm-nm libwawona-neovim.a 2>/dev/null | grep '_ExpandBufnames' | grep -qE ' [TW] '; then
       echo "buffer.c.o / _ExpandBufnames missing from libwawona-neovim.a" >&2
